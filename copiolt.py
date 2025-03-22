@@ -1,39 +1,65 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Dict, Optional, List
 
-app = Flask(__name__)
+app = FastAPI()
 
 # In-memory storage for demonstration purposes
-storage = {}
+storage: Dict[str, Dict] = {}
 
-@app.route('/storage', methods=['POST'])
-def create_storage():
-    data = request.json
-    storage_id = data.get('id')
-    if storage_id in storage:
-        return jsonify({'message': 'Storage already exists'}), 400
-    storage[storage_id] = data
-    return jsonify({'message': 'Storage created successfully'}), 201
+class StorageItem(BaseModel):
+    id: str
+    name: str
+    value: str
 
-@app.route('/storage/<storage_id>', methods=['GET'])
-def retrieve_storage(storage_id):
+class UpdateStorageItem(BaseModel):
+    name: Optional[str] = None
+    value: Optional[str] = None
+
+@app.post('/storage', response_model=Dict[str, str])
+def create_storage(item: StorageItem):
+    if item.id in storage:
+        raise HTTPException(status_code=400, detail="Storage already exists")
+    storage[item.id] = item.dict()
+    return {"message": "Storage created successfully"}
+
+@app.get('/storage/{storage_id}', response_model=Dict)
+def retrieve_storage(storage_id: str):
     if storage_id not in storage:
-        return jsonify({'message': 'Storage not found'}), 404
-    return jsonify(storage[storage_id]), 200
+        raise HTTPException(status_code=404, detail="Storage not found")
+    return storage[storage_id]
 
-@app.route('/storage/<storage_id>', methods=['PUT'])
-def update_storage(storage_id):
+@app.put('/storage/{storage_id}', response_model=Dict[str, str])
+def update_storage(storage_id: str, item: UpdateStorageItem):
     if storage_id not in storage:
-        return jsonify({'message': 'Storage not found'}), 404
-    data = request.json
-    storage[storage_id] = data
-    return jsonify({'message': 'Storage updated successfully'}), 200
+        raise HTTPException(status_code=404, detail="Storage not found")
+    if item.name is not None:
+        storage[storage_id]['name'] = item.name
+    if item.value is not None:
+        storage[storage_id]['value'] = item.value
+    return {"message": "Storage updated successfully"}
 
-@app.route('/storage/<storage_id>', methods=['DELETE'])
-def delete_storage(storage_id):
+@app.delete('/storage/{storage_id}', response_model=Dict[str, str])
+def delete_storage(storage_id: str):
     if storage_id not in storage:
-        return jsonify({'message': 'Storage not found'}), 404
+        raise HTTPException(status_code=404, detail="Storage not found")
     del storage[storage_id]
-    return jsonify({'message': 'Storage deleted successfully'}), 200
+    return {"message": "Storage deleted successfully"}
+
+@app.get('/storage', response_model=List[Dict])
+def list_storage():
+    return list(storage.values())
+
+@app.get('/storage/search', response_model=List[Dict])
+def search_storage(name: Optional[str] = None, value: Optional[str] = None):
+    results = []
+    for item in storage.values():
+        if name and item['name'] == name:
+            results.append(item)
+        elif value and item['value'] == value:
+            results.append(item)
+    return results
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8000)
